@@ -55,6 +55,25 @@ Apple Neural Engine (~4-20ms)           │    ▼ spec 补丁: PIL→Tensor   �
 5. **几何层全部纯逻辑**：tripwire 滞回带（6px，红绿灯停车抖动零误报）、车位状态机、
    禁区滞留、告警去重均不依赖 I/O，可离线单元测试（tests/ 共 114 项断言）。
 
+## 终端演示台
+
+```bash
+python demo.py        # 交互菜单
+```
+
+六个板块，全部真实执行、无模拟数据：
+
+| 板块 | 实际做什么 |
+|---|---|
+| ① 系统体检 | 实时探测芯片/P-E核/ANE/VideoToolbox/ANE 模型缓存/视频源 |
+| ② 引擎基准 | 真跑 ANE / MPS / CPU 检测+追踪对比，实时进度条 + FPS 条形图 |
+| ③ 场景实况 | 真分析视频流，终端实时遥测：FPS、类别构成、线计数、车位、告警流 |
+| ④ 工作原理 | ANE 直连数据流图 + 五个关键设计决策 |
+| ⑤ 质量门禁 | 真跑 5 套测试，通过/失败/耗时一目了然 |
+| ⑥ 能耗模式 | eco/balanced/turbo 配置与本机实测数据 |
+
+也支持脚本化：`python demo.py --section live --video xx.mp4 --scenario factory --max-frames 300`
+
 ## 三大场景用法
 
 ```bash
