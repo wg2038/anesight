@@ -1,0 +1,9 @@
+# custom_bytetrack.yaml
+# High-precision ByteTrack configuration optimized for urban traffic surveillance
+tracker_type: bytetrack
+track_high_thresh: 0.45  # High detection threshold
+track_low_thresh: 0.20   # Low detection threshold
+new_track_thresh: 0.50   # Require high confidence to spawn a new track (kills false IDs from shadows/markings)
+track_buffer: 120        # Retain lost tracks for up to 120 frames (4-5s) to survive red lights & occlusions
+match_thresh: 0.80       # Strict IoU matching
+fuse_score: True         # Fuse score with IoU to stabilize bounding boxes

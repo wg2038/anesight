@@ -1,0 +1,24 @@
+# Virtual env & caches
+.venv/
+__pycache__/
+*.pyc
+
+# Media: surveillance footage must never be committed (privacy)
+*.mp4
+*.mov
+*.avi
+*.mkv
+*.m4v
+samples/
+
+# Model weights: auto-downloaded (.pt) or auto-exported (ANE .mlpackage) on first run
+*.pt
+*.mlpackage
+*.mlmodel
+
+# Generated artifacts
+output/
+results_*.json
+
+# OS
+.DS_Store
