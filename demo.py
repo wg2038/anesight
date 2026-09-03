@@ -17,6 +17,7 @@ demo.py — ANESight 交互式终端演示台
 """
 
 import argparse
+import itertools
 import platform
 import subprocess
 import sys
@@ -40,6 +41,24 @@ VERSION = "1.0.0"
 
 
 # ---------------------------------------------------------------- helpers
+
+def stream_frames(video: Path, max_frames: int):
+    """Stream frames lazily (no preloading — full videos stay tiny in RAM).
+    max_frames <= 0 means loop the video until interrupted."""
+    import cv2
+    cap = cv2.VideoCapture(str(video))
+    count = 0
+    while max_frames <= 0 or count < max_frames:
+        ret, f = cap.read()
+        if not ret:
+            cap.set(cv2.CAP_PROP_POS_FRAMES, 0)  # loop for continuous demo
+            ret, f = cap.read()
+            if not ret:
+                break
+        yield f
+        count += 1
+    cap.release()
+
 
 def sysctl(name: str) -> str:
     try:
@@ -216,8 +235,9 @@ def section_live(video: str | None, max_frames: int, scenario: str = "road"):
         console.print("[red]未找到视频素材[/] — python download_samples.py")
         pause()
         return
-    console.print(f"场景: [cyan]{scenario}[/] | 素材: [cyan]{src}[/] | "
-                  f"上限 [cyan]{max_frames}[/] 帧 | [dim]Ctrl+C 随时停止[/]\n")
+    cap_txt = "循环播放直至 Ctrl+C" if max_frames <= 0 else f"上限 {max_frames} 帧"
+    console.print(f"场景: [cyan]{scenario}[/] | 素材: [cyan]{src}[/] | {cap_txt} | "
+                  f"[dim]Ctrl+C 随时停止并显示总结[/]\n")
 
     engine = InferenceEngine("yolov8s.pt", [512, 960], "auto",
                              [0, 1, 2, 3, 5, 7], "custom_bytetrack.yaml")
@@ -225,8 +245,13 @@ def section_live(video: str | None, max_frames: int, scenario: str = "road"):
     full_meta = build_full_meta(engine)
     alert_bus = AlertBus(cooldown_s=10.0)
 
-    cap_frames = load_frames(src, max_frames)
-    h, w = cap_frames[0].shape[:2]
+    stream = stream_frames(src, max_frames)
+    first = next(stream, None)
+    if first is None:
+        console.print("[red]无法读取视频帧[/]")
+        pause()
+        return
+    h, w = first.shape[:2]
     sw, sh = w / 1280.0, h / 674.0
     lines = [DirectionalLine((int(80 * sw), int(480 * sh)), (int(760 * sw), int(480 * sh)),
                              "VEHICLE-LINE", classes=("car", "bus", "truck", "motorcycle")),
@@ -274,8 +299,9 @@ def section_live(video: str | None, max_frames: int, scenario: str = "road"):
 
     alert_history: list[str] = []
     try:
-        with Live(render(), console=console, refresh_per_second=8, screen=False):
-            for frame in cap_frames:
+        with Live(render(), console=console, refresh_per_second=8, screen=False) as live:
+            last_paint = 0.0
+            for frame in itertools.chain([first], stream):
                 t_loop = time.perf_counter()
                 dets = sup(engine.track(frame))
                 stats["infer_ms"] = engine.infer_ms
@@ -316,6 +342,9 @@ def section_live(video: str | None, max_frames: int, scenario: str = "road"):
                 now = time.perf_counter()
                 stats["fps"] = 0.9 * stats["fps"] + 0.1 * (1 / max(now - t_prev, 1e-6))
                 t_prev = now
+                if now - last_paint >= 0.12:  # throttled telemetry repaint
+                    last_paint = now
+                    live.update(render())
     except KeyboardInterrupt:
         console.print("\n[yellow]已手动停止[/]")
 
@@ -449,6 +478,14 @@ SECTIONS = {"1": ("系统体检", section_system), "2": ("引擎基准", None),
 
 
 def main():
+    import signal
+
+    def _graceful(signum, frame):
+        raise KeyboardInterrupt
+
+    signal.signal(signal.SIGINT, _graceful)    # Ctrl+C（显式化默认行为）
+    signal.signal(signal.SIGTERM, _graceful)   # kill / 进程管理器同样优雅退出
+
     ap = argparse.ArgumentParser(description="ANESight 终端演示台")
     ap.add_argument("--section", choices=["system", "bench", "live", "arch", "tests", "modes"])
     ap.add_argument("--video", default=None)
