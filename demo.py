@@ -275,8 +275,8 @@ def section_live(video: str | None, max_frames: int, scenario: str = "road"):
 
     alert_history: list[str] = []
     import cv2
-    from traffic.annotate import (draw_box, draw_line, draw_restricted, draw_slot,
-                                  draw_trail)
+    from traffic.annotate import (draw_box, draw_hud, draw_line, draw_restricted,
+                                  draw_slot, draw_trail)
     win_ok = True
     try:
         cv2.namedWindow("ANESIGHT Live", cv2.WINDOW_NORMAL)
@@ -368,6 +368,12 @@ def section_live(video: str | None, max_frames: int, scenario: str = "road"):
                         draw_trail(frame, book.trails[d.track_id], meta["color"])
                         draw_box(frame, d, cls_name, meta["color"],
                                  f"#{d.track_id} {cls_name} {d.conf:.2f}")
+                    frame = draw_hud(
+                        frame, fps=stats["fps"], backend=engine.describe(),
+                        in_counts=counts, lines=lines, zones=[],
+                        scene_counts=book.scene_counts, frame_idx=stats["frames"],
+                        total_frames=0, source_name=src.name, mode="live",
+                        extra=f"ANE {stats['infer_ms']:.1f}ms")
                     cv2.imshow("ANESIGHT Live", frame)
                     if (cv2.waitKey(1) & 0xFF) == ord('q'):
                         break
