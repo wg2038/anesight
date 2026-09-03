@@ -20,6 +20,7 @@ association needs it); display/analytics confidence filtering happens afterwards
 """
 
 import ast
+import logging
 import shutil
 import time
 from dataclasses import dataclass
@@ -30,6 +31,11 @@ import cv2
 import numpy as np
 import torch
 import yaml
+
+# coremltools logs a version-mismatch warning on every import when torch is newer
+# than the version it was validated against. We validated this pairing empirically
+# (ANE fp16 vs MPS fp32: mean IoU 0.983, identical counts), so keep output clean.
+logging.getLogger("coremltools").setLevel(logging.ERROR)
 
 
 @dataclass
