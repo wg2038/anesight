@@ -273,30 +273,6 @@ def section_live(video: str | None, max_frames: int, scenario: str = "road"):
              "alerts": [], "scene": {}, "slot": None}
     t_prev = time.perf_counter()
 
-    def render():
-        grid = Table.grid(padding=(0, 2))
-        grid.add_row()
-        left = Table.grid(padding=(0, 1))
-        left.add_row(Text(f" FPS", style="dim"), Text(f"{stats['fps']:6.1f}", style="bold cyan"))
-        left.add_row(Text(" 帧", style="dim"), Text(f"{stats['frames']}", style="bold"))
-        left.add_row(Text(" ANE", style="dim"), Text(f"{stats['infer_ms']:.1f} ms", style="bold magenta"))
-        scene = "  ".join(f"{k}:{v}" for k, v in sorted(stats["scene"].items())) or "—"
-        left.add_row(Text(" 场景累计", style="dim"), Text(scene, style="green"))
-        if stats["slot"]:
-            left.add_row(Text(" 车位", style="dim"),
-                         Text(f"{stats['slot'][0]}/{stats['slot'][1]} 占用", style="yellow"))
-        right_rows = [Text("  ".join(f"{k}:{v}" for k, v in sorted(stats["counts"].items()))
-                           or "—", style="bold")]
-        for ln in lines:
-            right_rows.append(Text(f"{ln.name}: IN {ln.total_in} / OUT {ln.total_out}",
-                                   style="green"))
-        feed = stats["alerts"][-6:] or ["（暂无）"]
-        alert_panel = Panel("\n".join(feed), title="告警流", border_style="red")
-        counts_panel = Panel(Group(*right_rows), title="当帧构成", border_style="green")
-        return Layout().split_column(
-            Layout(Panel(Group(left), title=f"实时遥测 · {scenario.upper()}", border_style="cyan")),
-            Layout().split_row(Layout(counts_panel), Layout(alert_panel)))
-
     alert_history: list[str] = []
     import cv2
     from traffic.annotate import (draw_box, draw_line, draw_restricted, draw_slot,
@@ -307,11 +283,13 @@ def section_live(video: str | None, max_frames: int, scenario: str = "road"):
         cv2.resizeWindow("ANESIGHT Live", 960, int(960 * h / w))
     except Exception:
         win_ok = False  # headless: telemetry only
-    console.print("[dim]视频窗口已开启（按 q 或 Ctrl+C 结束并显示总结）[/]")
+    console.print("[dim]视频窗口已开启（按 q 或 Ctrl+C 结束并显示总结）[/]  ")
+    log_every = 30
+    t_start = time.perf_counter()
+    reader_fps = None
+    console.print("[dim]日志每 30 帧滚动一行；穿越/告警即时打印[/]\n")
     try:
-        with Live(render(), console=console, refresh_per_second=8, screen=False) as live:
-            last_paint = 0.0
-            for frame in itertools.chain([first], stream):
+        for frame in itertools.chain([first], stream):
                 t_loop = time.perf_counter()
                 dets = sup(engine.track(frame))
                 stats["infer_ms"] = engine.infer_ms
@@ -329,13 +307,17 @@ def section_live(video: str | None, max_frames: int, scenario: str = "road"):
                     for ln in lines:
                         ev = ln.update(d.track_id, prev_pt, pt, cls_name)
                         if ev:
-                            alert_history.append(
-                                f"[cross] {ln.name} #{d.track_id} {cls_name} {ev['direction'].upper()}")
+                            msg = (f"[green]✚ {ln.name}[/] #{d.track_id} {cls_name} "
+                                   f"{ev['direction'].upper()}")
+                            console.print("  >>> " + msg)
+                            alert_history.append(msg)
                     draws.append((d, meta, cls_name))
                 pairs = [(d, c) for d, meta, c in draws]
                 if slots is not None:
                     for sev in slots.update(pairs, time.monotonic()):
-                        alert_history.append(f"[slot] {sev['event']}: {sev['slot']}")
+                        msg = f"[yellow]▣ {sev['slot']} {sev['event']}[/]"
+                        console.print("  >>> " + msg)
+                        alert_history.append(msg)
                     stats["slot"] = slots.occupancy()
                 dpts = [(c, d.track_id, (d.cx, d.cy), d.xyxy) for d, meta, c in draws]
                 for rz in zones:
@@ -353,9 +335,25 @@ def section_live(video: str | None, max_frames: int, scenario: str = "road"):
                 now = time.perf_counter()
                 stats["fps"] = 0.9 * stats["fps"] + 0.1 * (1 / max(now - t_prev, 1e-6))
                 t_prev = now
-                if now - last_paint >= 0.12:  # throttled telemetry repaint
-                    last_paint = now
-                    live.update(render())
+                # ---- 滚动日志：每 30 帧一行（终端必然可见）
+                if stats["frames"] % log_every == 0:
+                    src_fps = reader_fps or 0
+                    elapsed = now - t_start
+                    mm, ss = int(elapsed) // 60, int(elapsed) % 60
+                    tot = src_fps and int(src_fps) or 0
+                    counts_txt = " ".join(f"{k}:{v}" for k, v in sorted(counts.items())) or "—"
+                    lines_txt = " ".join(f"{ln.name.split('-')[0]}:{ln.total_in}/{ln.total_out}"
+                                         for ln in lines)
+                    slot_txt = f" | 车位 {stats['slot'][0]}/{stats['slot'][1]}" if stats["slot"] else ""
+                    n_alerts = sum(alert_bus.counts.values())
+                    console.print(
+                        f"  [dim][{mm:02d}:{ss:02d}][/][cyan] F:{stats['frames']}[/] "
+                        f"[bold]{stats['fps']:5.1f} FPS[/] ANE {stats['infer_ms']:.1f}ms | "
+                        f"{counts_txt} | [green]{lines_txt}[/]{slot_txt} | "
+                        f"[red]告警:{n_alerts}[/]")
+
+                # ---- 事件即时打印（穿越已由 AlertBus/下行打印；此处补线事件）
+                pass
 
                 # ---- video window: real annotated picture alongside telemetry
                 if win_ok:
