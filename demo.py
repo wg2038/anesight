@@ -89,8 +89,7 @@ def banner() -> Panel:
     art.append("  ⚡ A N E S I G H T ⚡\n", style="bold cyan")
     art.append("  Apple Silicon 多场景视觉分析 · ANE 直连推理", style="dim")
     chip = sysctl("machdep.cpu.brand_string")
-    return Panel(Align.center(Group(art, Text(f"{chip} · demo v{VERSION}", style="dim"),
-                                    justify="center")),
+    return Panel(Align.center(Group(art, Text(f"{chip} · demo v{VERSION}", style="dim"))),
                  border_style="cyan", padding=(0, 2))
 
 
