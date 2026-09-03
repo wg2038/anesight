@@ -298,6 +298,16 @@ def section_live(video: str | None, max_frames: int, scenario: str = "road"):
             Layout().split_row(Layout(counts_panel), Layout(alert_panel)))
 
     alert_history: list[str] = []
+    import cv2
+    from traffic.annotate import (draw_box, draw_line, draw_restricted, draw_slot,
+                                  draw_trail)
+    win_ok = True
+    try:
+        cv2.namedWindow("ANESIGHT Live", cv2.WINDOW_NORMAL)
+        cv2.resizeWindow("ANESIGHT Live", 960, int(960 * h / w))
+    except Exception:
+        win_ok = False  # headless: telemetry only
+    console.print("[dim]视频窗口已开启（按 q 或 Ctrl+C 结束并显示总结）[/]")
     try:
         with Live(render(), console=console, refresh_per_second=8, screen=False) as live:
             last_paint = 0.0
@@ -315,11 +325,12 @@ def section_live(video: str | None, max_frames: int, scenario: str = "road"):
                         continue
                     cls_name = meta["name"]
                     counts[cls_name] = counts.get(cls_name, 0) + 1
-                    book.update_track(d, cls_name)
+                    _, prev_pt, pt = book.update_track(d, cls_name)
                     for ln in lines:
-                        ev = ln.update(d.track_id, d.bottom_center, d.bottom_center, cls_name)
+                        ev = ln.update(d.track_id, prev_pt, pt, cls_name)
                         if ev:
-                            alert_history.append(f"[cross] {ln.name} #{d.track_id} {cls_name}")
+                            alert_history.append(
+                                f"[cross] {ln.name} #{d.track_id} {cls_name} {ev['direction'].upper()}")
                     draws.append((d, meta, cls_name))
                 pairs = [(d, c) for d, meta, c in draws]
                 if slots is not None:
@@ -345,8 +356,31 @@ def section_live(video: str | None, max_frames: int, scenario: str = "road"):
                 if now - last_paint >= 0.12:  # throttled telemetry repaint
                     last_paint = now
                     live.update(render())
+
+                # ---- video window: real annotated picture alongside telemetry
+                if win_ok:
+                    for ln in lines:
+                        draw_line(frame, ln)
+                    if slots is not None:
+                        for slot in slots.slots:
+                            draw_slot(frame, slot, time.monotonic())
+                    for rz in zones:
+                        draw_restricted(frame, rz.zone)
+                    for d, meta, cls_name in draws:
+                        draw_trail(frame, book.trails[d.track_id], meta["color"])
+                        draw_box(frame, d, cls_name, meta["color"],
+                                 f"#{d.track_id} {cls_name} {d.conf:.2f}")
+                    cv2.imshow("ANESIGHT Live", frame)
+                    if (cv2.waitKey(1) & 0xFF) == ord('q'):
+                        break
     except KeyboardInterrupt:
         console.print("\n[yellow]已手动停止[/]")
+    finally:
+        if win_ok:
+            try:
+                cv2.destroyWindow("ANESIGHT Live")
+            except Exception:
+                pass
 
     console.print(f"\n[bold cyan]实况总结[/] — {stats['frames']} 帧 | "
                   f"{engine.describe()} | 场景累计: " +
